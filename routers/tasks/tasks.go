@@ -1,10 +1,13 @@
 package tasks
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 
 	"github.com/gin-gonic/gin"
@@ -31,7 +34,7 @@ func taskGetLogs(c *gin.Context) {
 		return
 	}
 
-	logFilePath := "./tmp/tasks/logs/" + taskID + ".log"
+	logFilePath := "./tmp/tasks/" + taskID + "/logs/" + taskID + ".log"
 	logFile, err := os.Open(logFilePath)
 	if err != nil {
 		c.JSON(500, gin.H{"error": "Failed to open log file"})
@@ -104,7 +107,8 @@ func executeTask(tasks []Task, logFile *os.File) {
 func taskRun(c *gin.Context) {
 	// 读取任务组，一个json数组，里面多个task，task包含，命令command、参数args、执行顺序order
 	tasks := []Task{}
-	if err := c.ShouldBindJSON(&tasks); err != nil {
+	jsonData := c.PostForm("json")
+	if err := json.Unmarshal([]byte(jsonData), &tasks); err != nil {
 		c.JSON(400, gin.H{"error": "Invalid request body"})
 		return
 	}
@@ -136,15 +140,47 @@ func taskRun(c *gin.Context) {
 
 	// 执行任务
 	taskID := uuid.New().String()
-	logFilePath := "./tmp/tasks/logs/" + taskID + ".log"
-
-	// 创建日志文件
-	if err := os.MkdirAll("./tmp/tasks/logs/", os.ModePerm); err != nil {
-		fmt.Println("Failed to create log directory:", err)
-		c.JSON(500, gin.H{"error": "Failed to create log directory"})
+	// 创建工作目录
+	workDir := "./tmp/tasks/" + taskID
+	if err := os.MkdirAll(workDir, os.ModePerm); err != nil {
+		fmt.Println("Failed to create work directory:", err)
+		c.JSON(500, gin.H{"error": "Failed to create work directory"})
 		return
 	}
-	// 创建日志文件
+	// 创建上传文件目录 uploads
+	uploadsDir := workDir + "/uploads"
+	if err := os.MkdirAll(uploadsDir, os.ModePerm); err != nil {
+		fmt.Println("Failed to create uploads directory:", err)
+		c.JSON(500, gin.H{"error": "Failed to create uploads directory"})
+		return
+	}
+
+	// 处理文件上传
+	form, err := c.MultipartForm()
+	if err == nil {
+		files := form.File["files"]
+		for _, file := range files {
+			// 生成唯一文件名
+			filePath := filepath.Join(uploadsDir, file.Filename)
+
+			// 保存文件
+			if err := c.SaveUploadedFile(file, filePath); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save file"})
+				return
+			}
+		}
+	}
+
+	// 创建日志目录
+	logsDir := workDir + "/logs"
+	if err := os.MkdirAll(logsDir, os.ModePerm); err != nil {
+		fmt.Println("Failed to create logs directory:", err)
+		c.JSON(500, gin.H{"error": "Failed to create logs directory"})
+		return
+	}
+
+	// 创建日志文件路径
+	logFilePath := logsDir + "/" + taskID + ".log" // 20250420 调整增加工作目录
 	logFile, err := os.Create(logFilePath)
 	if err != nil {
 		fmt.Println("Failed to create log file:", err)
