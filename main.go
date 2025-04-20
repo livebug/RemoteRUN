@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"livebug.dev/remoterun/routers"
+	"livebug.dev/remoterun/routers/tasks"
 )
 
 // Task 定义任务结构
@@ -99,7 +101,7 @@ func setupRouter() *gin.Engine {
 
 func main() {
 	// 调用 setupRouter 函数，初始化路由器
-	r := setupRouter()
+	r := routers.Init(tasks.Router)
 	// 启动 HTTP 服务器，监听 0.0.0.0:8080
 	r.Run(":8080")
 }
